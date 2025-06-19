@@ -12,7 +12,7 @@ from flask import Flask
 # --- Cấu hình Bot ---
 BOT_TOKEN = "7780674329:AAFRY3ZKa3aREMnF58wb0B9c7Wpd1i8REcQ"  # THAY THẾ BẰNG TOKEN THẬT CỦA BẠN
 ADMIN_IDS = [6915752059]  # Thay thế bằng ID Telegram của bạn (Admin chính)
-GROUP_LINK = "https://t.me/+cd71gCwx9Y1ZTM1"  # Link nhóm Telegram để người dùng tham gia
+GROUP_LINK = "https://t.me/+cd71g9Cwx9Y1ZTM1"  # Link nhóm Telegram để người dùng tham gia
 SUPPORT_USERNAME = "@heheviptool"  # Username hỗ trợ
 
 bot = telebot.TeleBot(BOT_TOKEN)
