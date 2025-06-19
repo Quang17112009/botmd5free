@@ -5,13 +5,14 @@ import json
 import time
 from datetime import datetime, timedelta
 import re
+import os # Import os for environment variables
 
 # Thư viện để keep_alive (Flask)
 from threading import Thread
 from flask import Flask
 
 # --- Cấu hình Bot ---
-BOT_TOKEN = "7942509227:AAGECLHLuuvPlul1jAidqmbjIgO_9zD2AV8"  # THAY THẾ BẰNG TOKEN THẬT CỦA BẠN
+BOT_TOKEN = "7942509227:AAGECLHLuuvPlul1jAidQmbjIgO_9zD2AV8"  # THAY THẾ BẰNG TOKEN THẬT CỦA BẠN
 ADMIN_IDS = [6915752059]  # Thay thế bằng ID Telegram của bạn
 GROUP_LINK = "https://t.me/+cd71g9Cwx9Y1ZTM1"  # Link nhóm Telegram để người dùng tham gia
 SUPPORT_USERNAME = "@heheviptool"  # Username hỗ trợ
@@ -72,6 +73,10 @@ def get_user_info(user_id):
 # --- VIP Status Checkers ---
 def is_vip(user_id):
     """Checks if a user has active VIP status."""
+    # ADMINs are always VIP
+    if user_id in ADMIN_IDS:
+        return True
+
     user_info = get_user_info(user_id)
     if user_info["is_vip"] and user_info["vip_expiry"]:
         try:
@@ -789,8 +794,6 @@ def run_flask_app():
 
 # --- Bot Initialization and Start ---
 if __name__ == "__main__":
-    import os # Import os here for PORT env variable
-    
     # Load data from JSON files
     user_data = load_data(USER_DATA_FILE)
     codes = load_data(CODES_FILE, default_data=codes) # Use default `codes` if file is empty or missing
