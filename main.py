@@ -346,7 +346,7 @@ def confirm_group_join_callback(call):
     bot.answer_callback_query(call.id, "Đang kiểm tra thành viên nhóm...", show_alert=False)
 
     # !!! REPLACE WITH YOUR ACTUAL GROUP CHAT ID (starts with -100) !!!
-    group_chat_id = -1002075726245 # EXAMPLE ID: You MUST change this!
+    group_chat_id = -1002781947864 # EXAMPLE ID: You MUST change this!
     is_member = is_member_of_group(user_id, group_chat_id)
 
     if is_member:
