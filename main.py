@@ -5,15 +5,15 @@ import json
 import time
 from datetime import datetime, timedelta
 import re
-import os # Import os for environment variables
+import os # Import os để xử lý biến môi trường cho Flask
 
 # Thư viện để keep_alive (Flask)
 from threading import Thread
 from flask import Flask
 
 # --- Cấu hình Bot ---
-BOT_TOKEN = "7942509227:AAGECLHLuuvPlul1jAidQmbjIgO_9zD2AV8"  # THAY THẾ BẰNG TOKEN THẬT CỦA BẠN
-ADMIN_IDS = [6915752059]  # Thay thế bằng ID Telegram của bạn
+BOT_TOKEN = "7942509227:AAGECLHLuuvPlul1jAidqmbjIgO_9zD2AV8"  # THAY THẾ BẰNG TOKEN THẬT CỦA BẠN
+ADMIN_IDS = [6915752059]  # Thay thế bằng ID Telegram của bạn (Admin chính)
 GROUP_LINK = "https://t.me/+cd71g9Cwx9Y1ZTM1"  # Link nhóm Telegram để người dùng tham gia
 SUPPORT_USERNAME = "@heheviptool"  # Username hỗ trợ
 
@@ -73,10 +73,6 @@ def get_user_info(user_id):
 # --- VIP Status Checkers ---
 def is_vip(user_id):
     """Checks if a user has active VIP status."""
-    # ADMINs are always VIP
-    if user_id in ADMIN_IDS:
-        return True
-
     user_info = get_user_info(user_id)
     if user_info["is_vip"] and user_info["vip_expiry"]:
         try:
@@ -265,9 +261,12 @@ def custom_md5_analyzer(md5_hash):
 
 # --- Decorators for access control ---
 def vip_required(func):
-    """Decorator to restrict access to VIP users."""
+    """Decorator to restrict access to VIP users, but allows Super Admins."""
     def wrapper(message):
         user_id = message.from_user.id
+        if is_super_admin(user_id): # Kích hoạt tính năng cho Admin chính
+            func(message)
+            return
         if not is_vip(user_id):
             bot.reply_to(message, "⚠️ **Bạn cần có tài khoản VIP để sử dụng tính năng này.**\nVui lòng kích hoạt VIP bằng cách nhập mã hoặc tham gia nhóm để nhận VIP miễn phí.\n\nSử dụng /help để biết thêm chi tiết.", parse_mode='Markdown')
             return
@@ -275,9 +274,12 @@ def vip_required(func):
     return wrapper
 
 def admin_ctv_required(func):
-    """Decorator to restrict access to Admin/CTV users."""
+    """Decorator to restrict access to Admin/CTV users, but allows Super Admins."""
     def wrapper(message):
         user_id = message.from_user.id
+        if is_super_admin(user_id): # Kích hoạt tính năng cho Admin chính
+            func(message)
+            return
         if not is_admin_ctv(user_id):
             bot.reply_to(message, "⛔️ **Bạn không có quyền sử dụng lệnh này.**", parse_mode='Markdown')
             return
@@ -651,7 +653,7 @@ def show_stats(message):
     bot.send_message(user_id, stats_message, parse_mode='Markdown')
 
 @bot.message_handler(commands=['history'])
-@vip_required # Requires VIP to view detailed history
+@vip_required # Requires VIP to view detailed history (Admin bypasses this)
 def show_history(message):
     """Displays a user's recent prediction history."""
     user_id = message.from_user.id
@@ -731,14 +733,23 @@ def show_account_info(message):
 
 # --- Handles all text messages, primarily for MD5 input ---
 @bot.message_handler(func=lambda message: True)
-@vip_required # Only VIP users can send MD5 for analysis
 def handle_text_messages(message):
     """Handles incoming text messages, focusing on MD5 analysis."""
     user_id = message.from_user.id
     user_info = get_user_info(user_id)
     text = message.text.strip()
 
-    # Check if the message is a valid MD5 hash or if bot is waiting for MD5
+    # Allow Super Admin to bypass VIP requirement for MD5 analysis
+    if not is_super_admin(user_id) and not is_vip(user_id):
+        # If not an MD5 and not VIP, provide general instructions or VIP prompt
+        if not re.fullmatch(r"[0-9a-fA-F]{32}", text):
+            bot.reply_to(message, "🤔 Tôi không hiểu yêu cầu của bạn. Vui lòng sử dụng các lệnh có sẵn (ví dụ: `/help`) hoặc gửi mã MD5 để tôi phân tích.\n\n⚠️ **Để phân tích MD5, bạn cần có tài khoản VIP.** Sử dụng /help để biết thêm chi tiết.", parse_mode='Markdown')
+            return
+        else: # If it's an MD5 but user is not VIP
+            bot.reply_to(message, "⚠️ **Bạn cần có tài khoản VIP để sử dụng tính năng phân tích MD5 này.**\nVui lòng kích hoạt VIP bằng cách nhập mã hoặc tham gia nhóm để nhận VIP miễn phí.\n\nSử dụng /help để biết thêm chi tiết.", parse_mode='Markdown')
+            return
+
+    # If user is VIP or Super Admin, proceed with MD5 analysis
     if user_info["waiting_for_md5"] or re.fullmatch(r"[0-9a-fA-F]{32}", text):
         if re.fullmatch(r"[0-9a-fA-F]{32}", text):
             predicted_result, result_md5, is_correct, analysis_output = custom_md5_analyzer(text)
@@ -746,13 +757,12 @@ def handle_text_messages(message):
             if predicted_result is not None:
                 bot.reply_to(message, analysis_output, parse_mode='Markdown')
 
-                # Update user statistics and history
+                # Update user statistics and history (tracked for both VIP users and Admin)
                 if is_correct:
                     user_info["correct_predictions"] += 1
                 else:
                     user_info["wrong_predictions"] += 1
                 
-                # Add to history
                 user_info["history"].append({
                     "md5_short": f"{text[:4]}...{text[-4:]}", # Store short form for history
                     "prediction": predicted_result,
@@ -760,7 +770,6 @@ def handle_text_messages(message):
                     "is_correct": is_correct,
                     "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 })
-                # Limit history size to prevent it from growing too large
                 user_info["history"] = user_info["history"][-50:] # Keep last 50 entries
 
                 save_data(USER_DATA_FILE, user_data)
@@ -806,4 +815,3 @@ if __name__ == "__main__":
     # Start the Telegram bot polling
     print("Telegram bot polling started...")
     bot.polling(non_stop=True)
-
