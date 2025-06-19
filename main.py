@@ -12,7 +12,7 @@ from threading import Thread
 from flask import Flask
 
 # --- Cấu hình Bot ---
-BOT_TOKEN = "7942509227:AAGECLHLuuvPlul1jAidqmbjIgO_9zD2AV8"  # THAY THẾ BẰNG TOKEN THẬT CỦA BẠN
+BOT_TOKEN = "7942509227:AAGECLHLUuvPlul1jAidQmbjIgO_9zD2AV8"  # THAY THẾ BẰNG TOKEN THẬT CỦA BẠN
 ADMIN_IDS = [6915752059]  # Thay thế bằng ID Telegram của bạn (Admin chính)
 GROUP_LINK = "https://t.me/+cd71g9Cwx9Y1ZTM1"  # Link nhóm Telegram để người dùng tham gia
 SUPPORT_USERNAME = "@heheviptool"  # Username hỗ trợ
@@ -141,7 +141,7 @@ def custom_md5_analyzer(md5_hash):
     """
     Simulated MD5 analysis function.
     This is illustrative and does not represent a real prediction algorithm.
-    It incorporates the "2 Gãy : 1 khác" ratio for the actual result.
+    It incorporates the "2 Gãy : 1 Khác" ratio for the actual result.
     """
     try:
         # A simple "deterministic" part for Hyper-AI based on MD5 content
@@ -304,25 +304,22 @@ def send_welcome(message):
     user_id = message.from_user.id
     user_info = get_user_info(user_id)
     user_info["name"] = message.from_user.first_name or "Bạn"
-    save_data(USER_DATA_FILE, user_data)
-
-    # Process invite link parameter
+    
+    # --- START - Modified Section ---
+    # Store inviter ID if present, but don't activate VIP here
+    inviter_id = None
     if message.text and len(message.text.split()) > 1:
         inviter_id_str = message.text.split()[1]
         try:
             inviter_id = int(inviter_id_str)
-            # Check if inviter is valid and not self-invitation
             if inviter_id != user_id and inviter_id in user_data:
-                inviter_info = get_user_info(inviter_id)
-                if user_id not in inviter_info.get("invited_users", []): # Prevent multiple credits for same invited user
-                    inviter_info["invite_count"] += 1
-                    inviter_info["invited_users"].append(user_id) # Add invited user to inviter's list
-                    
-                    activate_vip(inviter_id, 1) # Credit 1 VIP day to inviter
-                    bot.send_message(inviter_id, f"🎉 **Chúc mừng!** Bạn đã nhận được **1 ngày VIP** từ lượt mời thành công của người dùng {user_info['name']} (ID: `{user_id}`).", parse_mode='Markdown')
-                    save_data(USER_DATA_FILE, user_data)
+                # Store the inviter's ID for later use when user confirms group join
+                user_info['invited_by'] = inviter_id
         except ValueError:
-            pass
+            pass # Invalid inviter ID
+    # --- END - Modified Section ---
+
+    save_data(USER_DATA_FILE, user_data)
 
     welcome_message = f"""
 👋 Chào mừng bạn, **{user_info['name']}**!
@@ -353,6 +350,24 @@ def confirm_group_join_callback(call):
         if not user_info.get("has_claimed_free_vip"):
             expiry = activate_vip(user_id, 7)
             user_info["has_claimed_free_vip"] = True
+            
+            # --- START - Modified Section ---
+            # Check if this user was invited by someone and credit VIP to inviter
+            inviter_id = user_info.get("invited_by")
+            if inviter_id and inviter_id in user_data:
+                inviter_info = get_user_info(inviter_id)
+                if user_id not in inviter_info.get("invited_users", []): # Prevent multiple credits for same invited user
+                    inviter_info["invite_count"] += 1
+                    inviter_info["invited_users"].append(user_id) # Add invited user to inviter's list
+                    
+                    activate_vip(inviter_id, 1) # Credit 1 VIP day to inviter
+                    bot.send_message(inviter_id, f"🎉 **Chúc mừng!** Bạn đã nhận được **1 ngày VIP** từ lượt mời thành công của người dùng {user_info['name']} (ID: `{user_id}`) đã tham gia nhóm.", parse_mode='Markdown')
+            
+            # Clear the invited_by field after processing
+            if "invited_by" in user_info:
+                del user_info["invited_by"]
+            # --- END - Modified Section ---
+
             save_data(USER_DATA_FILE, user_data)
             bot.send_message(user_id, f"🎉 **Chúc mừng!** Bạn đã tham gia nhóm thành công.\n\n**VIP 7 ngày miễn phí** của bạn đã được kích hoạt!\n🗓️ Thời gian hết hạn: {expiry.strftime('%Y-%m-%d %H:%M:%S')}", parse_mode='Markdown')
             bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=call.message.text + "\n\n✅ **Bạn đã nhận VIP 7 ngày miễn phí.**", parse_mode='Markdown')
@@ -679,7 +694,10 @@ def send_invite_link(message):
     user_id = message.from_user.id
     user_info = get_user_info(user_id)
     bot_username = bot.get_me().username # Get bot's username dynamically
-    invite_link = f"https://t.me/{bot_username}?start={user_id}"
+    invite_link = f"https://t.me/{bot_username}?start={user_id}" # This link format is for inviting to bot
+
+    # The group invite link is still needed for the user to share the group directly
+    group_invite_link = GROUP_LINK
 
     user_info["invite_link_generated"] = True
     save_data(USER_DATA_FILE, user_data)
@@ -688,9 +706,12 @@ def send_invite_link(message):
 💌 **MỜI BẠN BÈ, NHẬN VIP MIỄN PHÍ!** 💌
 ──────────────────────────
 📢 Chia sẻ link này để mời bạn bè tham gia bot:
-🔗 **Link mời của bạn:** `{invite_link}`
+🔗 **Link mời bot của bạn:** `{invite_link}`
 
-🎁 Cứ mỗi 1 người bạn mời thành công (tham gia bot và được bot ghi nhận), bạn sẽ nhận được **1 ngày VIP miễn phí**!
+👉 Khi bạn bè sử dụng link này để `start` bot, chúng tôi sẽ ghi nhận họ được mời bởi bạn.
+Sau đó, khi họ **tham gia vào nhóm chính thức** và nhấn "✅ Tôi đã tham gia nhóm", bạn sẽ nhận được **1 ngày VIP miễn phí**!
+
+🔗 **Link nhóm chính thức:** {group_invite_link}
 ──────────────────────────
 👥 Tổng số lượt mời thành công của bạn: **{user_info['invite_count']}**
 """
