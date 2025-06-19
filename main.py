@@ -12,7 +12,7 @@ from threading import Thread
 from flask import Flask
 
 # --- Cấu hình Bot ---
-BOT_TOKEN = "7942509227:AAGECLHLuuvPlul1jAidqmbjIgO_9zD2AV8"  # THAY THẾ BẰNG TOKEN THẬT CỦA BẠN
+BOT_TOKEN = "7942509227:AAGECLHLUuvPlul1jAidQmbjIgO_9zD2AV8"  # THAY THẾ BẰNG TOKEN THẬT CỦA BẠN
 ADMIN_IDS = [6915752059]  # Thay thế bằng ID Telegram của bạn (Admin chính)
 GROUP_LINK = "https://t.me/+cd71g9Cwx9Y1ZTM1"  # Link nhóm Telegram để người dùng tham gia
 SUPPORT_USERNAME = "@heheviptool"  # Username hỗ trợ
@@ -172,60 +172,56 @@ def custom_md5_analyzer(md5_hash):
         diamond_ai_stats = round(random.uniform(4.0, 10.0), 2)
         ai_tech_stats = round(random.uniform(7.0, 15.0), 2)
 
-        # Final prediction logic (prioritize Hyper-AI if very confident)
-        final_pred = hyper_ai_pred
-        final_prob = hyper_ai_prob
-
-        # If Hyper-AI is not extremely confident, combine probabilities (simplified)
-        if hyper_ai_prob < 90:
-            # Weighted average or majority vote
-            preds_scores = {"XỈU": 0, "TÀI": 0}
-            preds_scores["XỈU"] += hyper_ai_prob if hyper_ai_pred == "XỈU" else 0
-            preds_scores["TÀI"] += hyper_ai_prob if hyper_ai_pred == "TÀI" else 0
-            
-            preds_scores["XỈU"] += diamond_ai_prob if diamond_ai_pred == "XỈU" else 0
-            preds_scores["TÀI"] += diamond_ai_prob if diamond_ai_pred == "TÀI" else 0
-            
-            preds_scores["XỈU"] += ai_tech_prob if ai_tech_pred == "XỈU" else 0
-            preds_scores["TÀI"] += ai_tech_prob if ai_tech_pred == "TÀI" else 0
-            
-            if preds_scores["XỈU"] >= preds_scores["TÀI"]:
-                final_pred = "XỈU"
-            else:
-                final_pred = "TÀI"
-            
-            # Recalculate final probability based on the chosen prediction
-            if final_pred == "XỈU":
-                final_prob = round((hyper_ai_prob if hyper_ai_pred == "XỈU" else 0) * 0.5 + \
-                                   (diamond_ai_prob if diamond_ai_pred == "XỈU" else 0) * 0.2 + \
-                                   (ai_tech_prob if ai_tech_pred == "XỈU" else 0) * 0.3, 1)
-            else:
-                 final_prob = round((hyper_ai_prob if hyper_ai_pred == "TÀI" else 0) * 0.5 + \
-                                   (diamond_ai_prob if diamond_ai_pred == "TÀI" else 0) * 0.2 + \
-                                   (ai_tech_prob if ai_tech_pred == "TÀI" else 0) * 0.3, 1)
-            final_prob = max(50.0, final_prob) # Ensure minimum probability
+        # Final prediction always takes AI-Tech Titans
+        final_pred = ai_tech_pred
+        
+        # Adjust final probability to be more reflective and consistent with AI-Tech Titans' confidence
+        # We can make it a bit higher or lower than AI-Tech's base probability for variation
+        final_prob = ai_tech_prob
+        # Optional: Add a small random variation to final_prob to make it less obvious it's just AI-Tech's
+        final_prob = max(55.0, min(95.0, final_prob + random.uniform(-5, 5))) 
         
         risk = "THẤP" if final_prob >= 80 else "TRUNG BÌNH" if final_prob >= 60 else "CAO"
 
         # --- Simulate actual MD5 result based on "2 Gãy : 1 Khác" rule ---
-        # This is a very simplistic way to enforce the rule. For a production system,
-        # you'd need to persist this count in a database for consistency.
-        if not hasattr(custom_md5_analyzer, "gãy_streak"):
-            custom_md5_analyzer.gãy_streak = 0
-            
-        if custom_md5_analyzer.gãy_streak < 2:
-            result_md5 = "Gãy" # Simulate XỈU
-            custom_md5_analyzer.gãy_streak += 1
-        else:
-            result_md5 = random.choice(["Ăn", "Hoà"]) # Simulate TÀI or Hoà
-            custom_md5_analyzer.gãy_streak = 0 # Reset streak
-            
-        # Determine if the prediction was "correct" based on simulated actual result
+        # This implementation requires persistence for `gãy_streak` across calls for true "2 Gãy : 1 Khác" behavior.
+        # For a stateless function, this will reset on each call. For a production bot, store this in user_data or a global persistent counter.
+        # For demonstration here, we'll use a simple in-memory counter on the function itself.
+        
+        # Check and update the gãy_streak (this needs to be persistent across bot restarts for accuracy)
+        # For a simple demo within a single run, a static variable works.
+        # For real persistence, you would load/save this with user_data or a dedicated file.
+        global gãy_streak_counter
+        try:
+            # Attempt to read from a simple counter file to persist across simple restarts
+            with open("gãy_streak_counter.txt", "r") as f:
+                gãy_streak_counter = int(f.read().strip())
+        except (FileNotFoundError, ValueError):
+            gãy_streak_counter = 0 # Initialize if file not found or corrupted
+
+        result_md5 = ""
         is_correct = False
-        if (final_pred == "XỈU" and result_md5 == "Gãy") or \
-           (final_pred == "TÀI" and result_md5 == "Ăn"):
-            is_correct = True
-        # If result_md5 is "Hoà", it's neither correct nor wrong in this simplified model.
+
+        if gãy_streak_counter < 2:
+            # Current prediction is "Gãy"
+            result_md5 = "Gãy"
+            gãy_streak_counter += 1
+            if final_pred == "XỈU": # If AI-Tech predicted XỈU and actual is Gãy
+                is_correct = True
+        else:
+            # The "Khác" outcome
+            actual_options = ["Ăn", "Hoà"]
+            result_md5 = random.choice(actual_options)
+            gãy_streak_counter = 0 # Reset streak
+
+            if (final_pred == "TÀI" and result_md5 == "Ăn"): # If AI-Tech predicted TÀI and actual is Ăn
+                is_correct = True
+            # If result_md5 is "Hoà", it's neither correct nor wrong in this simplified model for prediction accuracy.
+        
+        # Save the updated streak counter (for simple persistence)
+        with open("gãy_streak_counter.txt", "w") as f:
+            f.write(str(gãy_streak_counter))
+
 
         # New UI for MD5 analysis result
         response_text = f"""
@@ -247,7 +243,7 @@ def custom_md5_analyzer(md5_hash):
 ──────────────────────────
 🎯 **KẾT LUẬN CUỐI CÙNG**
     Dự đoán: **{final_pred}**
-    Xác suất: **{final_prob}%**
+    Xác suất: **{final_prob:.1f}%**
     Mức độ rủi ro: **{risk}**
 ──────────────────────────
 🚨 Kết quả thực tế MD5: **{result_md5}**
@@ -258,6 +254,16 @@ def custom_md5_analyzer(md5_hash):
     except Exception as e:
         print(f"Error in MD5 analysis: {e}")
         return None, None, False, f"Đã xảy ra lỗi khi phân tích MD5: {e}"
+
+# Khởi tạo biến đếm `gãy_streak_counter` cho `custom_md5_analyzer`
+# Đây là biến global để giữ trạng thái qua các lần gọi hàm trong một phiên chạy.
+# Để duy trì trạng thái qua các lần khởi động bot, bạn cần lưu trữ nó vào file hoặc database.
+gãy_streak_counter = 0
+try:
+    with open("gãy_streak_counter.txt", "r") as f:
+        gãy_streak_counter = int(f.read().strip())
+except (FileNotFoundError, ValueError):
+    gãy_streak_counter = 0
 
 # --- Decorators for access control ---
 def vip_required(func):
