@@ -251,7 +251,7 @@ def custom_md5_analyzer(md5_hash):
     Mức độ rủi ro: **{risk}**
 ──────────────────────────
 🚨 Kết quả thực tế MD5: **{result_md5}**
-    _Lưu ý: Kết quả này chỉ mang tính tham khảo. Chúc may mắn!_
+    _Liên hệ tele @heheviptool hoặc @Besttaixiu999 để được hỗ trợ ! Chúc bạn may mắn!_
 """
         return final_pred, result_md5, is_correct, response_text
 
