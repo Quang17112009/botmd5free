@@ -5,9 +5,7 @@ import json
 import time
 from datetime import datetime, timedelta
 import re
-import os # Import os để xử lý biến môi trường cho Flask
-
-# Thư viện để keep_alive (Flask)
+import os
 from threading import Thread
 from flask import Flask
 
@@ -22,10 +20,17 @@ bot = telebot.TeleBot(BOT_TOKEN)
 # --- Dữ liệu người dùng và mã code ---
 USER_DATA_FILE = "users.json"
 CODES_FILE = "codes.json"
+BOT_STATE_FILE = "bot_state.json" # File mới để lưu trạng thái bot
+
 user_data = {}
 codes = {
     "CODEFREE7DAY": {"type": "vip_days", "value": 7, "used_by": None}
 }
+bot_state = {} # Biến để lưu trạng thái bot (bao gồm md5_gãy_streak)
+
+# Biến toàn cục để theo dõi chuỗi "Gãy" và hash MD5 cuối cùng được xử lý
+md5_gãy_streak = 0
+last_md5_hash_processed = None
 
 def load_data(file_path, default_data={}):
     """Loads data from a JSON file."""
@@ -48,7 +53,6 @@ def save_data(file_path, data):
             json.dump({str(k): v for k, v in data.items()}, f, indent=4)
         else:
             json.dump(data, f, indent=4)
-    # print(f"Data saved to {file_path}") # Optional: for debugging
 
 def get_user_info(user_id):
     """Retrieves or initializes user data."""
@@ -58,7 +62,7 @@ def get_user_info(user_id):
             "is_vip": False,
             "vip_expiry": None,
             "invite_count": 0,
-            "invited_users": [], # To track who this user invited (list of user_ids)
+            "invited_users": [],
             "correct_predictions": 0,
             "wrong_predictions": 0,
             "is_admin_ctv": False,
@@ -139,97 +143,133 @@ def generate_code(length=10):
 # --- Prediction Algorithm (Simulated for MD5) ---
 def custom_md5_analyzer(md5_hash):
     """
-    Simulated MD5 analysis function.
-    This is illustrative and does not represent a real prediction algorithm.
-    It incorporates the "2 Gãy : 1 Khác" ratio for the actual result.
+    Nâng cấp hàm phân tích MD5 mô phỏng với "siêu thuật toán" phức tạp hơn.
     """
+    global md5_gãy_streak
+    global last_md5_hash_processed
+    global bot_state # Truy cập biến bot_state
+
     try:
-        # A simple "deterministic" part for Hyper-AI based on MD5 content
-        # This is for demonstration of "algorithm" only.
-        decimal_val = int(md5_hash[-4:], 16) # Convert last 4 hex chars to decimal
-        
-        # Hyper-AI (highest simulated accuracy)
-        if decimal_val % 2 == 0:
-            hyper_ai_pred = "XỈU"
-            hyper_ai_prob = round(random.uniform(88, 98), 1) # High probability
-        else:
-            hyper_ai_pred = "TÀI"
-            hyper_ai_prob = round(random.uniform(88, 98), 1)
+        # Đảm bảo hash là hợp lệ và có độ dài 32
+        if not re.fullmatch(r"[0-9a-fA-F]{32}", md5_hash):
+            return None, None, False, "Mã MD5 không hợp lệ. Vui lòng nhập đúng 32 ký tự MD5."
 
-        # Diamond AI (medium simulated accuracy)
-        diamond_ai_pred = "XỈU" if random.random() < 0.55 else "TÀI"
-        diamond_ai_prob = round(random.uniform(50, 75), 1)
+        # Tránh xử lý lại cùng một MD5 nếu gọi liên tiếp (trong một phiên làm việc)
+        if md5_hash == last_md5_hash_processed:
+            # Bạn có thể chọn trả về kết quả cũ hoặc thông báo
+            # Để đơn giản, ta sẽ tính lại nhưng khuyến nghị xử lý ở tầng cao hơn
+            pass
+        last_md5_hash_processed = md5_hash
 
-        # AI-Tech Titans (good simulated accuracy)
-        ai_tech_pred = "XỈU" if random.random() < 0.65 else "TÀI"
-        ai_tech_prob = round(random.uniform(60, 85), 1)
+        # --- Phân tích các thuộc tính của MD5 ---
+        decimal_val_full = int(md5_hash, 16) # Tổng giá trị thập phân của toàn bộ hash
+        decimal_val_last_4 = int(md5_hash[-4:], 16) # Last 4 chars
+        decimal_val_first_4 = int(md5_hash[:4], 16) # First 4 chars
 
-        # Simulate total HEX value
+        # Count of odd/even digits (simplified)
+        odd_digits = sum(1 for char in md5_hash if char in '13579bdfBDF')
+        even_digits = 32 - odd_digits # Assuming hex chars count
+
+        # Sum of all hex values (already in your code)
         total_hex = sum(int(c, 16) for c in md5_hash)
 
-        # Simulated algorithm statistics (e.g., success rate or "power")
-        hyper_ai_stats = round(random.uniform(20.0, 30.0), 2)
-        diamond_ai_stats = round(random.uniform(4.0, 10.0), 2)
-        ai_tech_stats = round(random.uniform(7.0, 15.0), 2)
+        # --- Logic cho từng AI (tinh chỉnh) ---
 
-        # Final prediction logic (prioritize Hyper-AI if very confident)
-        final_pred = hyper_ai_pred
-        final_prob = hyper_ai_prob
+        # HYPER-AI (Độ chính xác cao nhất, tập trung vào các quy tắc mạnh)
+        hyper_ai_pred = ""
+        hyper_ai_prob = 0.0
 
-        # If Hyper-AI is not extremely confident, combine probabilities (simplified)
-        if hyper_ai_prob < 90:
-            # Weighted average or majority vote
-            preds_scores = {"XỈU": 0, "TÀI": 0}
-            preds_scores["XỈU"] += hyper_ai_prob if hyper_ai_pred == "XỈU" else 0
-            preds_scores["TÀI"] += hyper_ai_prob if hyper_ai_pred == "TÀI" else 0
-            
-            preds_scores["XỈU"] += diamond_ai_prob if diamond_ai_pred == "XỈU" else 0
-            preds_scores["TÀI"] += diamond_ai_prob if diamond_ai_pred == "TÀI" else 0
-            
-            preds_scores["XỈU"] += ai_tech_prob if ai_tech_pred == "XỈU" else 0
-            preds_scores["TÀI"] += ai_tech_prob if ai_tech_pred == "TÀI" else 0
-            
-            if preds_scores["XỈU"] >= preds_scores["TÀI"]:
-                final_pred = "XỈU"
-            else:
-                final_pred = "TÀI"
-            
-            # Recalculate final probability based on the chosen prediction
-            if final_pred == "XỈU":
-                final_prob = round((hyper_ai_prob if hyper_ai_pred == "XỈU" else 0) * 0.5 + \
-                                   (diamond_ai_prob if diamond_ai_pred == "XỈU" else 0) * 0.2 + \
-                                   (ai_tech_prob if ai_tech_pred == "XỈU" else 0) * 0.3, 1)
-            else:
-                 final_prob = round((hyper_ai_prob if hyper_ai_pred == "TÀI" else 0) * 0.5 + \
-                                   (diamond_ai_prob if diamond_ai_pred == "TÀI" else 0) * 0.2 + \
-                                   (ai_tech_prob if ai_tech_pred == "TÀI" else 0) * 0.3, 1)
-            final_prob = max(50.0, final_prob) # Ensure minimum probability
-        
-        risk = "THẤP" if final_prob >= 80 else "TRUNG BÌNH" if final_prob >= 60 else "CAO"
-
-        # --- Simulate actual MD5 result based on "2 Gãy : 1 Khác" rule ---
-        # This is a very simplistic way to enforce the rule. For a production system,
-        # you'd need to persist this count in a database for consistency.
-        if not hasattr(custom_md5_analyzer, "gãy_streak"):
-            custom_md5_analyzer.gãy_streak = 0
-            
-        if custom_md5_analyzer.gãy_streak < 2:
-            result_md5 = "Gãy" # Simulate XỈU
-            custom_md5_analyzer.gãy_streak += 1
+        # Rule 1: Tổng HEX
+        if total_hex % 2 == 0:
+            hyper_ai_pred = "XỈU"
         else:
-            result_md5 = random.choice(["Ăn", "Hoà"]) # Simulate TÀI or Hoà
-            custom_md5_analyzer.gãy_streak = 0 # Reset streak
-            
-        # Determine if the prediction was "correct" based on simulated actual result
-        is_correct = False
-        if (final_pred == "XỈU" and result_md5 == "Gãy") or \
-           (final_pred == "TÀI" and result_md5 == "Ăn"):
-            is_correct = True
-        # If result_md5 is "Hoà", it's neither correct nor wrong in this simplified model.
+            hyper_ai_pred = "TÀI"
+        hyper_ai_prob = round(random.uniform(90, 99), 1) # Rất cao
 
-        # New UI for MD5 analysis result
+        # Rule 2: Kết thúc MD5
+        if decimal_val_last_4 % 2 == 0: # Chẵn
+            # Ưu tiên XỈU nếu tổng HEX là chẵn, TÀI nếu tổng HEX là lẻ
+            if hyper_ai_pred == "XỈU":
+                hyper_ai_pred = "XỈU" # Tăng cường xác suất
+            else:
+                 hyper_ai_pred = "XỈU" if random.random() < 0.6 else "TÀI" # Có thể thay đổi
+        else: # Lẻ
+            if hyper_ai_pred == "TÀI":
+                hyper_ai_pred = "TÀI" # Tăng cường xác suất
+            else:
+                hyper_ai_pred = "TÀI" if random.random() < 0.6 else "XỈU" # Có thể thay đổi
+
+        hyper_ai_prob = round(random.uniform(88, 98), 1) # Sau khi tinh chỉnh
+
+        # DIAMOND AI (Độ chính xác trung bình, kết hợp các yếu tố)
+        diamond_ai_pred = "XỈU" if (decimal_val_first_4 + odd_digits) % 2 == 0 else "TÀI"
+        diamond_ai_prob = round(random.uniform(65, 85), 1) # Cao hơn trước
+
+        # AI-TECH TITANS (Độ chính xác tốt, dựa trên phân tích số lẻ/chẵn)
+        ai_tech_pred = "XỈU" if even_digits > odd_digits else "TÀI"
+        ai_tech_prob = round(random.uniform(70, 90), 1) # Cao hơn trước
+
+        # --- Thống kê hiệu suất AI (giả lập, bạn có thể thay đổi để phản ánh "công suất" của AI) ---
+        hyper_ai_stats = round(random.uniform(25.0, 35.0), 2) # Giả lập X mạnh hơn
+        diamond_ai_stats = round(random.uniform(5.0, 12.0), 2)
+        ai_tech_stats = round(random.uniform(10.0, 20.0), 2)
+
+        # --- Kết luận cuối cùng (kết hợp các AI) ---
+        predictions_with_probs = [
+            (hyper_ai_pred, hyper_ai_prob * 0.5),  # Hyper-AI có trọng số cao nhất
+            (diamond_ai_pred, diamond_ai_prob * 0.3),
+            (ai_tech_pred, ai_tech_prob * 0.2)
+        ]
+
+        total_tai_score = 0
+        total_xiu_score = 0
+
+        for pred, prob in predictions_with_probs:
+            if pred == "TÀI":
+                total_tai_score += prob
+            else:
+                total_xiu_score += prob
+
+        final_pred = "TÀI" if total_tai_score > total_xiu_score else "XỈU"
+
+        # Tính xác suất cuối cùng dựa trên AI được chọn
+        if final_pred == "TÀI":
+            final_prob = round(total_tai_score / (total_tai_score + total_xiu_score) * 100, 1) if (total_tai_score + total_xiu_score) > 0 else 50.0
+        else:
+            final_prob = round(total_xiu_score / (total_tai_score + total_xiu_score) * 100, 1) if (total_tai_score + total_xiu_score) > 0 else 50.0
+
+        final_prob = max(55.0, final_prob) # Đảm bảo xác suất tối thiểu để cảm giác "tin cậy" hơn
+
+        risk = "THẤP" if final_prob >= 85 else "TRUNG BÌNH" if final_prob >= 70 else "CAO"
+
+        # --- Mô phỏng kết quả thực tế MD5 theo quy tắc "2 Gãy : 1 Khác" ---
+        simulated_actual_result_text = ""
+        is_correct = False
+
+        # Đọc md5_gãy_streak từ bot_state
+        current_streak = bot_state.get("md5_gãy_streak", 0)
+
+        if current_streak < 2:
+            simulated_actual_result_text = "Gãy" # Kết quả mong muốn là "Gãy" (tương ứng XỈU)
+            bot_state["md5_gãy_streak"] = current_streak + 1
+            if final_pred == "XỈU": # Nếu dự đoán XỈU và kết quả Gãy -> Đúng
+                is_correct = True
+        else:
+            # Khi streak đạt 2, lần tiếp theo phải là "Khác" (Ăn hoặc Hoà)
+            options = ["Ăn", "Hoà"]
+            simulated_actual_result_text = random.choice(options)
+            bot_state["md5_gãy_streak"] = 0 # Reset streak
+
+            if simulated_actual_result_text == "Ăn" and final_pred == "TÀI": # Nếu dự đoán TÀI và kết quả Ăn -> Đúng
+                is_correct = True
+            elif simulated_actual_result_text == "Hoà":
+                is_correct = False # Hoà không tính đúng/sai
+
+        # Rất quan trọng: Lưu trạng thái sau khi cập nhật
+        save_data(BOT_STATE_FILE, bot_state)
+
         response_text = f"""
-✨ **PHÂN TÍCH MD5 ĐỘC QUYỀN** ✨
+✨ **PHÂN TÍCH MD5 ĐỘC QUYỀN V2** ✨
 ──────────────────────────
 🔑 Mã MD5: `{md5_hash[:8]}...{md5_hash[-8:]}`
 📊 Tổng giá trị HEX: **{total_hex}**
@@ -250,10 +290,10 @@ def custom_md5_analyzer(md5_hash):
     Xác suất: **{final_prob}%**
     Mức độ rủi ro: **{risk}**
 ──────────────────────────
-🚨 Kết quả thực tế MD5: **{result_md5}**
+🚨 Kết quả thực tế MD5: **{simulated_actual_result_text}**
     _Lưu ý: Kết quả này chỉ mang tính tham khảo. Chúc may mắn!_
 """
-        return final_pred, result_md5, is_correct, response_text
+        return final_pred, simulated_actual_result_text, is_correct, response_text
 
     except Exception as e:
         print(f"Error in MD5 analysis: {e}")
@@ -264,7 +304,7 @@ def vip_required(func):
     """Decorator to restrict access to VIP users, but allows Super Admins."""
     def wrapper(message):
         user_id = message.from_user.id
-        if is_super_admin(user_id): # Kích hoạt tính năng cho Admin chính
+        if is_super_admin(user_id):
             func(message)
             return
         if not is_vip(user_id):
@@ -277,7 +317,7 @@ def admin_ctv_required(func):
     """Decorator to restrict access to Admin/CTV users, but allows Super Admins."""
     def wrapper(message):
         user_id = message.from_user.id
-        if is_super_admin(user_id): # Kích hoạt tính năng cho Admin chính
+        if is_super_admin(user_id):
             func(message)
             return
         if not is_admin_ctv(user_id):
@@ -304,20 +344,16 @@ def send_welcome(message):
     user_id = message.from_user.id
     user_info = get_user_info(user_id)
     user_info["name"] = message.from_user.first_name or "Bạn"
-    
-    # --- START - Modified Section ---
-    # Store inviter ID if present, but don't activate VIP here
+
     inviter_id = None
     if message.text and len(message.text.split()) > 1:
         inviter_id_str = message.text.split()[1]
         try:
             inviter_id = int(inviter_id_str)
             if inviter_id != user_id and inviter_id in user_data:
-                # Store the inviter's ID for later use when user confirms group join
                 user_info['invited_by'] = inviter_id
         except ValueError:
-            pass # Invalid inviter ID
-    # --- END - Modified Section ---
+            pass
 
     save_data(USER_DATA_FILE, user_data)
 
@@ -350,23 +386,19 @@ def confirm_group_join_callback(call):
         if not user_info.get("has_claimed_free_vip"):
             expiry = activate_vip(user_id, 7)
             user_info["has_claimed_free_vip"] = True
-            
-            # --- START - Modified Section ---
-            # Check if this user was invited by someone and credit VIP to inviter
+
             inviter_id = user_info.get("invited_by")
             if inviter_id and inviter_id in user_data:
                 inviter_info = get_user_info(inviter_id)
-                if user_id not in inviter_info.get("invited_users", []): # Prevent multiple credits for same invited user
+                if user_id not in inviter_info.get("invited_users", []):
                     inviter_info["invite_count"] += 1
-                    inviter_info["invited_users"].append(user_id) # Add invited user to inviter's list
-                    
-                    activate_vip(inviter_id, 1) # Credit 1 VIP day to inviter
+                    inviter_info["invited_users"].append(user_id)
+
+                    activate_vip(inviter_id, 1)
                     bot.send_message(inviter_id, f"🎉 **Chúc mừng!** Bạn đã nhận được **1 ngày VIP** từ lượt mời thành công của người dùng {user_info['name']} (ID: `{user_id}`) đã tham gia nhóm.", parse_mode='Markdown')
-            
-            # Clear the invited_by field after processing
+
             if "invited_by" in user_info:
                 del user_info["invited_by"]
-            # --- END - Modified Section ---
 
             save_data(USER_DATA_FILE, user_data)
             bot.send_message(user_id, f"🎉 **Chúc mừng!** Bạn đã tham gia nhóm thành công.\n\n**VIP 7 ngày miễn phí** của bạn đã được kích hoạt!\n🗓️ Thời gian hết hạn: {expiry.strftime('%Y-%m-%d %H:%M:%S')}", parse_mode='Markdown')
@@ -389,6 +421,9 @@ def send_help(message):
 📜 `/history` - Xem lịch sử các lần dự đoán của bạn.
 📩 `/invite` - Lấy link mời bạn bè nhận VIP và nhận thêm ngày VIP.
 👤 `/id` - Xem thông tin tài khoản của bạn.
+💰 `/gia` - Xem bảng giá dịch vụ VIP.
+✍️ `/gopy [nội dung]` - Gửi góp ý đến Admin.
+💳 `/nap` - Hướng dẫn nạp tiền.
 ──────────────────────────
 **Để phân tích MD5:**
     Chỉ cần gửi mã **MD5 (32 ký tự)** trực tiếp vào bot.
@@ -573,6 +608,21 @@ def send_broadcast(message):
             print(f"Không thể gửi thông báo đến người dùng {user_id}: {e}")
     bot.reply_to(message, f"✅ Đã gửi thông báo tới **{sent_count}** người dùng.", parse_mode='Markdown')
 
+@bot.message_handler(commands=['md5status'])
+@super_admin_required
+def show_md5_status(message):
+    """Allows Super Admin to view the current MD5 streak status."""
+    current_streak = bot_state.get("md5_gãy_streak", 0)
+    bot.reply_to(message, f"📈 **Trạng thái MD5 'Gãy' Streak:** Hiện tại đang là `{current_streak}` / 2.\n(Cứ 2 lần 'Gãy' sẽ có 1 lần 'Khác'.)", parse_mode='Markdown')
+
+@bot.message_handler(commands=['resetmd5streak'])
+@super_admin_required
+def reset_md5_streak(message):
+    """Allows Super Admin to reset the MD5 streak."""
+    bot_state["md5_gãy_streak"] = 0
+    save_data(BOT_STATE_FILE, bot_state)
+    bot.reply_to(message, "✅ Đã reset trạng thái MD5 'Gãy' streak về 0.", parse_mode='Markdown')
+
 @bot.message_handler(commands=['code'])
 def handle_code(message):
     """Handles VIP code activation for users and code generation/check for admins."""
@@ -580,7 +630,7 @@ def handle_code(message):
     args = message.text.split()
 
     if is_super_admin(user_id):
-        if len(args) == 1: # Admin /code -> Generate new code (default 15 days)
+        if len(args) == 1:
             new_code = generate_code()
             codes[new_code] = {"type": "admin_generated", "value": 15, "used_by": None}
             save_data(CODES_FILE, codes)
@@ -588,7 +638,7 @@ def handle_code(message):
         elif len(args) == 2:
             arg_value = args[1].upper()
             try:
-                days_to_add = int(arg_value) # Try to interpret as number of days
+                days_to_add = int(arg_value)
                 if days_to_add <= 0:
                     bot.reply_to(message, "❌ Số ngày phải là số nguyên dương.", parse_mode='Markdown')
                     return
@@ -596,7 +646,7 @@ def handle_code(message):
                 codes[new_code] = {"type": "admin_generated", "value": days_to_add, "used_by": None}
                 save_data(CODES_FILE, codes)
                 bot.reply_to(message, f"✅ Đã tạo mã VIP mới: `{new_code}` (VIP {days_to_add} ngày).", parse_mode='Markdown')
-            except ValueError: # Not a number, assume it's a code to check
+            except ValueError:
                 code_to_check = arg_value
                 if code_to_check in codes:
                     code_info = codes[code_to_check]
@@ -615,7 +665,6 @@ Trạng thái: `{status}`
             bot.reply_to(message, "📝 Lệnh `/code` dành cho Admin:\n- `/code`: Tạo mã VIP mới (15 ngày).\n- `/code [số_ngày]`: Tạo mã VIP với số ngày cụ thể.\n- `/code [mã]`: Kiểm tra thông tin mã VIP cụ thể.", parse_mode='Markdown')
         return
 
-    # User uses /code [mã]
     if len(args) < 2:
         bot.reply_to(message, "📝 Vui lòng nhập mã kích hoạt VIP sau lệnh /code.\nVí dụ: `/code CODEFREE7DAY`", parse_mode='Markdown')
         return
@@ -629,20 +678,18 @@ Trạng thái: `{status}`
     if code_info["used_by"] is not None:
         bot.reply_to(message, "⚠️ Mã này đã được sử dụng bởi người khác rồi.", parse_mode='Markdown')
         return
-    
-    # Special check for CODEFREE7DAY: one-time use per user
+
     if user_code == "CODEFREE7DAY":
         user_info = get_user_info(user_id)
         if user_info.get("has_claimed_free_vip"):
             bot.reply_to(message, "❌ Mã `CODEFREE7DAY` chỉ có thể sử dụng **một lần duy nhất** cho mỗi tài khoản.", parse_mode='Markdown')
             return
-        user_info["has_claimed_free_vip"] = True # Mark as claimed
+        user_info["has_claimed_free_vip"] = True
         save_data(USER_DATA_FILE, user_data)
 
-    # Activate VIP for the user
     days = code_info["value"]
     expiry = activate_vip(user_id, days)
-    code_info["used_by"] = user_id # Mark code as used
+    code_info["used_by"] = user_id
     save_data(CODES_FILE, codes)
 
     bot.reply_to(message, f"🎉 **Chúc mừng!** Bạn đã kích hoạt VIP thành công với mã `{user_code}`.\n\nThời gian VIP của bạn kéo dài thêm **{days} ngày** và sẽ hết hạn vào: {expiry.strftime('%Y-%m-%d %H:%M:%S')}", parse_mode='Markdown')
@@ -668,7 +715,7 @@ def show_stats(message):
     bot.send_message(user_id, stats_message, parse_mode='Markdown')
 
 @bot.message_handler(commands=['history'])
-@vip_required # Requires VIP to view detailed history (Admin bypasses this)
+@vip_required
 def show_history(message):
     """Displays a user's recent prediction history."""
     user_id = message.from_user.id
@@ -678,11 +725,10 @@ def show_history(message):
     if not user_info['history']:
         history_text += "Bạn chưa có lịch sử dự đoán nào."
     else:
-        # Display up to 10 most recent entries
         for entry in user_info['history'][-10:]:
             status = "✅ ĐÚNG" if entry['is_correct'] else "❌ SAI"
             history_text += f"- MD5: `{entry['md5_short']}` | Dự đoán: **{entry['prediction']}** | Kết quả: **{entry['result_md5']}** | Status: **{status}** | Lúc: {entry['time']}\n"
-        
+
         if len(user_info['history']) > 10:
             history_text += "\n_... và nhiều hơn nữa. Chỉ hiển thị 10 mục gần nhất._"
 
@@ -693,10 +739,9 @@ def send_invite_link(message):
     """Generates and sends a unique invite link for the user."""
     user_id = message.from_user.id
     user_info = get_user_info(user_id)
-    bot_username = bot.get_me().username # Get bot's username dynamically
-    invite_link = f"https://t.me/{bot_username}?start={user_id}" # This link format is for inviting to bot
+    bot_username = bot.get_me().username
+    invite_link = f"https://t.me/{bot_username}?start={user_id}"
 
-    # The group invite link is still needed for the user to share the group directly
     group_invite_link = GROUP_LINK
 
     user_info["invite_link_generated"] = True
@@ -752,55 +797,53 @@ def show_account_info(message):
 """
     bot.send_message(user_id, account_info_message, parse_mode='Markdown')
 
-# --- Handles all text messages, primarily for MD5 input ---
 @bot.message_handler(func=lambda message: True)
 def handle_text_messages(message):
-    """Handles incoming text messages, focusing on MD5 analysis."""
+    """Handles incoming text messages, focusing on MD5 input."""
     user_id = message.from_user.id
     user_info = get_user_info(user_id)
     text = message.text.strip()
 
-    # Allow Super Admin to bypass VIP requirement for MD5 analysis
+    # MD5 hash pattern
+    is_md5_hash = re.fullmatch(r"[0-9a-fA-F]{32}", text)
+
+    # Check VIP status or if it's a super admin
     if not is_super_admin(user_id) and not is_vip(user_id):
-        # If not an MD5 and not VIP, provide general instructions or VIP prompt
-        if not re.fullmatch(r"[0-9a-fA-F]{32}", text):
-            bot.reply_to(message, "🤔 Tôi không hiểu yêu cầu của bạn. Vui lòng sử dụng các lệnh có sẵn (ví dụ: `/help`) hoặc gửi mã MD5 để tôi phân tích.\n\n⚠️ **Để phân tích MD5, bạn cần có tài khoản VIP.** Sử dụng /help để biết thêm chi tiết.", parse_mode='Markdown')
-            return
-        else: # If it's an MD5 but user is not VIP
+        if is_md5_hash:
             bot.reply_to(message, "⚠️ **Bạn cần có tài khoản VIP để sử dụng tính năng phân tích MD5 này.**\nVui lòng kích hoạt VIP bằng cách nhập mã hoặc tham gia nhóm để nhận VIP miễn phí.\n\nSử dụng /help để biết thêm chi tiết.", parse_mode='Markdown')
+            return
+        else:
+            bot.reply_to(message, "🤔 Tôi không hiểu yêu cầu của bạn. Vui lòng sử dụng các lệnh có sẵn (ví dụ: `/help`) hoặc gửi mã MD5 để tôi phân tích.\n\n⚠️ **Để phân tích MD5, bạn cần có tài khoản VIP.**", parse_mode='Markdown')
             return
 
     # If user is VIP or Super Admin, proceed with MD5 analysis
-    if user_info["waiting_for_md5"] or re.fullmatch(r"[0-9a-fA-F]{32}", text):
-        if re.fullmatch(r"[0-9a-fA-F]{32}", text):
-            predicted_result, result_md5, is_correct, analysis_output = custom_md5_analyzer(text)
-            
-            if predicted_result is not None:
-                bot.reply_to(message, analysis_output, parse_mode='Markdown')
+    if is_md5_hash:
+        bot.send_chat_action(message.chat.id, 'typing') # Show typing status
+        predicted_result, result_md5, is_correct, analysis_output = custom_md5_analyzer(text)
 
-                # Update user statistics and history (tracked for both VIP users and Admin)
-                if is_correct:
-                    user_info["correct_predictions"] += 1
-                else:
-                    user_info["wrong_predictions"] += 1
-                
-                user_info["history"].append({
-                    "md5_short": f"{text[:4]}...{text[-4:]}", # Store short form for history
-                    "prediction": predicted_result,
-                    "result_md5": result_md5, # Simulated actual result (e.g., Gãy/Ăn)
-                    "is_correct": is_correct,
-                    "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                })
-                user_info["history"] = user_info["history"][-50:] # Keep last 50 entries
+        if predicted_result is not None:
+            bot.reply_to(message, analysis_output, parse_mode='Markdown')
 
-                save_data(USER_DATA_FILE, user_data)
+            if is_correct:
+                user_info["correct_predictions"] += 1
             else:
-                bot.reply_to(message, analysis_output) # Display error if analysis failed
-            
-            user_info["waiting_for_md5"] = False
+                user_info["wrong_predictions"] += 1
+
+            user_info["history"].append({
+                "md5_short": f"{text[:4]}...{text[-4:]}",
+                "prediction": predicted_result,
+                "result_md5": result_md5,
+                "is_correct": is_correct,
+                "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            })
+            user_info["history"] = user_info["history"][-50:]
+
             save_data(USER_DATA_FILE, user_data)
         else:
-            bot.reply_to(message, "❌ Mã MD5 không hợp lệ. Vui lòng nhập đúng **32 ký tự MD5** (chỉ chứa chữ số 0-9 và chữ cái a-f).", parse_mode='Markdown')
+            bot.reply_to(message, analysis_output)
+
+        user_info["waiting_for_md5"] = False
+        save_data(USER_DATA_FILE, user_data)
     else:
         # If not an MD5 and not waiting for MD5, provide general instructions
         bot.reply_to(message, "🤔 Tôi không hiểu yêu cầu của bạn. Vui lòng sử dụng các lệnh có sẵn (ví dụ: `/help`) hoặc gửi mã MD5 để tôi phân tích.", parse_mode='Markdown')
@@ -816,8 +859,6 @@ def home():
 
 def run_flask_app():
     """Runs the Flask app in a separate thread."""
-    # Render will typically use the PORT environment variable.
-    # If not set, or for local testing, a random port is used.
     port = int(os.environ.get('PORT', random.randint(2000, 9000)))
     print(f"Flask app running on port {port}")
     app.run(host='0.0.0.0', port=port)
@@ -826,7 +867,12 @@ def run_flask_app():
 if __name__ == "__main__":
     # Load data from JSON files
     user_data = load_data(USER_DATA_FILE)
-    codes = load_data(CODES_FILE, default_data=codes) # Use default `codes` if file is empty or missing
+    codes = load_data(CODES_FILE, default_data=codes)
+    bot_state = load_data(BOT_STATE_FILE, default_data={"md5_gãy_streak": 0})
+
+    # Gán giá trị từ bot_state vào biến toàn cục md5_gãy_streak
+    md5_gãy_streak = bot_state["md5_gãy_streak"]
+
     print("Bot is starting...")
 
     # Start the Flask app in a separate thread to keep the bot alive
