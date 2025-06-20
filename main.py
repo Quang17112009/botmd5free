@@ -10,7 +10,7 @@ from threading import Thread
 from flask import Flask
 
 # --- Cấu hình Bot ---
-BOT_TOKEN = "7942509227:AAGECLHLuuvPlul1jAidqmbjIgO_9zD2AV8"  # THAY THẾ BẰNG TOKEN THẬT CỦA BẠN
+BOT_TOKEN = "8070556149:AAEWspw2Kkl5EYCDuFVQPisG5YcDgTpbk1A"  # THAY THẾ BẰNG TOKEN THẬT CỦA BẠN
 ADMIN_IDS = [6915752059]  # Thay thế bằng ID Telegram của bạn (Admin chính)
 GROUP_LINK = "https://t.me/+cd71gCwx9Y1ZTM1"  # Link nhóm Telegram để người dùng tham gia
 SUPPORT_USERNAME = "@heheviptool"  # Username hỗ trợ
