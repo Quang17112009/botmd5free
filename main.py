@@ -10,8 +10,16 @@ from threading import Thread
 from flask import Flask
 
 # --- Cấu hình Bot ---
-BOT_TOKEN = "7942509227:AAGECLHLuuvPlul1jAidqmbjIgO_9zD2AV8"  # THAY THẾ BẰNG TOKEN THẬT CỦA BẠN
-ADMIN_IDS = [6915752059]  # Thay thế bằng ID Telegram của bạn (Admin chính)
+# LẤY TOKEN VÀ ADMIN_IDS TỪ BIẾN MÔI TRƯỜNG CỦA RENDER
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+ADMIN_IDS = json.loads(os.environ.get("ADMIN_IDS", "[]")) # Parse JSON string to list
+
+# Đảm bảo BOT_TOKEN và ADMIN_IDS được cung cấp
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN environment variable not set.")
+if not ADMIN_IDS:
+    print("Warning: ADMIN_IDS environment variable not set or empty. No super admin configured.")
+
 GROUP_LINK = "https://t.me/+cd71g9Cwx9Y1ZTM1"  # Link nhóm Telegram để người dùng tham gia
 SUPPORT_USERNAME = "@heheviptool"  # Username hỗ trợ
 
@@ -29,6 +37,7 @@ codes = {
 bot_state = {} # Biến để lưu trạng thái bot (bao gồm md5_gãy_streak)
 
 # Biến toàn cục để theo dõi chuỗi "Gãy" và hash MD5 cuối cùng được xử lý
+# Sẽ được khởi tạo từ bot_state khi load dữ liệu
 md5_gãy_streak = 0
 last_md5_hash_processed = None
 
@@ -249,6 +258,7 @@ def custom_md5_analyzer(md5_hash):
         # Đọc md5_gãy_streak từ bot_state
         current_streak = bot_state.get("md5_gãy_streak", 0)
 
+        # Sử dụng thông tin từ [2025-06-03] Lưu ý rằng cứ 2 lần phân tích MD5 cho kết quả 'Gãy' thì sẽ có 1 lần cho kết quả khác.
         if current_streak < 2:
             simulated_actual_result_text = "Gãy" # Kết quả mong muốn là "Gãy" (tương ứng XỈU)
             bot_state["md5_gãy_streak"] = current_streak + 1
@@ -378,8 +388,17 @@ def confirm_group_join_callback(call):
     user_info = get_user_info(user_id)
     bot.answer_callback_query(call.id, "Đang kiểm tra thành viên nhóm...", show_alert=False)
 
-    # !!! REPLACE WITH YOUR ACTUAL GROUP CHAT ID (starts with -100) !!!
-    group_chat_id = -1002781947864 # EXAMPLE ID: You MUST change this!
+    # LẤY GROUP_CHAT_ID TỪ BIẾN MÔI TRƯỜNG CỦA RENDER
+    group_chat_id_str = os.environ.get("GROUP_CHAT_ID")
+    if not group_chat_id_str:
+        bot.send_message(user_id, "Lỗi: GROUP_CHAT_ID chưa được cấu hình. Vui lòng liên hệ Admin.", parse_mode='Markdown')
+        return
+    try:
+        group_chat_id = int(group_chat_id_str)
+    except ValueError:
+        bot.send_message(user_id, "Lỗi: GROUP_CHAT_ID cấu hình không hợp lệ. Vui lòng liên hệ Admin.", parse_mode='Markdown')
+        return
+
     is_member = is_member_of_group(user_id, group_chat_id)
 
     if is_member:
@@ -859,7 +878,7 @@ def home():
 
 def run_flask_app():
     """Runs the Flask app in a separate thread."""
-    port = int(os.environ.get('PORT', random.randint(2000, 9000)))
+    port = int(os.environ.get('PORT', 5000)) # Use 5000 as a common default for Flask
     print(f"Flask app running on port {port}")
     app.run(host='0.0.0.0', port=port)
 
