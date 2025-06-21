@@ -21,12 +21,12 @@ user_coins = {}
 user_free_trial_end_time = {} # Giữ lại nhưng không dùng, để tránh lỗi nếu có trong data.json cũ
 referral_links = {}
 user_pending_confirmation = {}
-CTV_IDS = [] # NEW: Danh sách ID của các CTV
+CTV_IDS = []
 
 DATA_FILE = "data.json"
 
 # Hằng số cho hệ thống xu
-COIN_PER_MD5_ANALYZE = 10
+COIN_PER_MD5_ANALYZE = 1 # Đã sửa: Mỗi lần phân tích MD5 chỉ trừ 1 xu
 REFERRAL_BONUS_COINS = 15
 GROUP_JOIN_BONUS_COINS = 30
 
@@ -78,7 +78,7 @@ def save_data():
             "user_free_trial_end_time": user_free_trial_end_time,
             "referral_links": referral_links,
             "user_pending_confirmation": user_pending_confirmation,
-            "CTV_IDS": CTV_IDS # NEW: Save CTV IDs
+            "CTV_IDS": CTV_IDS
         }, f)
 
 def load_data():
@@ -92,13 +92,12 @@ def load_data():
             user_free_trial_end_time = data.get("user_free_trial_end_time", {})
             referral_links = data.get("referral_links", {})
             user_pending_confirmation = data.get("user_pending_confirmation", {})
-            CTV_IDS = data.get("CTV_IDS", []) # NEW: Load CTV IDs
+            CTV_IDS = data.get("CTV_IDS", [])
     except FileNotFoundError:
         save_data()
 
 load_data()
 
-# Hàm kiểm tra xem người dùng có phải là thành viên của nhóm không
 def is_user_member(chat_id, user_id):
     try:
         member = bot.get_chat_member(chat_id, user_id)
@@ -112,7 +111,6 @@ def is_user_member(chat_id, user_id):
         print(f"Error checking user membership: {e}")
         return False
 
-# NEW: Hàm kiểm tra xem người dùng có quyền admin hoặc CTV không
 def is_admin_or_ctv(user_id):
     return user_id in ADMIN_IDS or user_id in CTV_IDS
 
@@ -273,9 +271,18 @@ def handle_nap(message):
 
     amount = int(parts[1])
     user_id = message.from_user.id
-    coins_to_add = (amount // 1000) * COIN_PER_MD5_ANALYZE
-    if coins_to_add < (10 * COIN_PER_MD5_ANALYZE) or coins_to_add > (10000 * COIN_PER_MD5_ANALYZE):
-        bot.reply_to(message, f"⚠️ Bạn chỉ được mua từ {10 * COIN_PER_MD5_ANALYZE} đến {10000 * COIN_PER_MD5_ANALYZE} xu "
+    # Tính xu dựa trên 1000đ = 10 xu, hoặc 1 xu = 100đ
+    # Để đơn giản, nếu 1 lần sài tốn 1 xu, thì bạn có thể thiết lập 1000đ = 10 xu
+    # Hoặc nếu bạn muốn 1000đ = 100 xu, tức là 1 xu = 10đ
+    # Tôi sẽ giữ tỷ lệ 1000đ = 10 xu để mua số xu lớn hơn dễ hơn.
+    # coins_to_add = (amount // 1000) * COIN_PER_MD5_ANALYZE # Cái này sai, nó sẽ nhân với 1 xu
+    # Đúng ra là 1000đ = X xu, thì tổng xu là (số tiền / 1000) * X
+    # Giả sử 1000đ = 10 xu:
+    coins_to_add = (amount // 1000) * 10 # 1000đ = 10 xu
+    
+    # Giới hạn số xu mua: min (10000đ = 100 xu), max (10,000,000đ = 100,000 xu)
+    if coins_to_add < 100 or coins_to_add > 100000:
+        bot.reply_to(message, f"⚠️ Bạn chỉ được mua từ 100 xu đến 100,000 xu "
                               f"(tương ứng từ 10,000đ đến 10,000,000đ).")
         return
 
@@ -340,7 +347,8 @@ def handle_dabank(message):
 
 @bot.message_handler(commands=['support'])
 def handle_support(message):
-    bot.reply_to(message, "📩 Nếu bạn cần hỗ trợ, vui lòng liên hệ với admin tại: @cskhtool88")
+    # Đã sửa: Thông tin liên hệ admin
+    bot.reply_to(message, "📩 Nếu bạn cần hỗ trợ, vui lòng liên hệ với admin tại: @heheviptool")
 
 @bot.message_handler(commands=['moiban'])
 def handle_moiban(message):
@@ -351,7 +359,6 @@ def handle_moiban(message):
                           f"bạn sẽ được cộng thêm {REFERRAL_BONUS_COINS} xu!")
 
 
-# NEW: Lệnh /addxu (cho Admin và CTV)
 @bot.message_handler(commands=['addxu'])
 def add_coins(message):
     user_id_requester = message.from_user.id
@@ -384,7 +391,6 @@ def add_coins(message):
         bot.reply_to(message, f"⚠️ Đã cộng xu nhưng không thể gửi thông báo cho người dùng {target_user_id} (có thể họ đã chặn bot).")
 
 
-# NEW: Lệnh /ctv (chỉ dành cho Admin)
 @bot.message_handler(commands=['ctv'])
 def grant_ctv_role(message):
     user_id_requester = message.from_user.id
