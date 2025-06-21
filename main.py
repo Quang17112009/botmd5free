@@ -1,4 +1,5 @@
 import telebot
+from telebot import types
 import random
 import string
 import json
@@ -9,19 +10,25 @@ keep_alive()
 
 BOT_TOKEN = "7581761997:AAFPeyJDvTYQoVob-P3MDuXpaEByrEtbVT8"  # Đảm bảo đây là token chính xác
 ADMIN_IDS = [6915752059]
-SUPPORT_GROUP_LINK = "https://t.me/+cd71g9Cwx9Y1ZTM1" # Link nhóm hỗ trợ
-# ID của nhóm bạn muốn người dùng tham gia để nhận free trial
-# Bạn cần lấy ID này bằng cách thêm bot vào nhóm và dùng một bot khác để lấy chat ID, hoặc in message.chat.id từ bot của bạn
+SUPPORT_GROUP_LINK = "https://t.me/+cd71g9Cwx9Y1ZTM1"
 SUPPORT_GROUP_ID = -1002781947864 # Thay thế bằng ID nhóm thực tế của bạn
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
 history = []
 profit = 0
-user_turns = {}
-user_free_trial_end_time = {} # Thêm để lưu thời gian kết thúc free trial
-referral_links = {} # Lưu trữ link giới thiệu
+user_coins = {}
+user_free_trial_end_time = {} # Giữ lại nhưng không dùng, để tránh lỗi nếu có trong data.json cũ
+referral_links = {}
+user_pending_confirmation = {}
+CTV_IDS = [] # NEW: Danh sách ID của các CTV
+
 DATA_FILE = "data.json"
+
+# Hằng số cho hệ thống xu
+COIN_PER_MD5_ANALYZE = 10
+REFERRAL_BONUS_COINS = 15
+GROUP_JOIN_BONUS_COINS = 30
 
 def generate_nap_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -65,23 +72,27 @@ def analyze_md5(md5_hash):
 def save_data():
     with open(DATA_FILE, "w") as f:
         json.dump({
-            "user_turns": user_turns,
+            "user_coins": user_coins,
             "history": history,
             "profit": profit,
             "user_free_trial_end_time": user_free_trial_end_time,
-            "referral_links": referral_links
+            "referral_links": referral_links,
+            "user_pending_confirmation": user_pending_confirmation,
+            "CTV_IDS": CTV_IDS # NEW: Save CTV IDs
         }, f)
 
 def load_data():
-    global user_turns, history, profit, user_free_trial_end_time, referral_links
+    global user_coins, history, profit, user_free_trial_end_time, referral_links, user_pending_confirmation, CTV_IDS
     try:
         with open(DATA_FILE, "r") as f:
             data = json.load(f)
-            user_turns = data.get("user_turns", {})
+            user_coins = data.get("user_coins", {})
             history = data.get("history", [])
             profit = data.get("profit", 0)
             user_free_trial_end_time = data.get("user_free_trial_end_time", {})
             referral_links = data.get("referral_links", {})
+            user_pending_confirmation = data.get("user_pending_confirmation", {})
+            CTV_IDS = data.get("CTV_IDS", []) # NEW: Load CTV IDs
     except FileNotFoundError:
         save_data()
 
@@ -94,62 +105,86 @@ def is_user_member(chat_id, user_id):
         return member.status in ['member', 'creator', 'administrator']
     except telebot.apihelper.ApiTelegramException as e:
         if e.error_code == 400 and "user not found" in e.description:
-            return False # Người dùng không tồn tại trong nhóm
+            return False
         elif e.error_code == 400 and "chat not found" in e.description:
             print(f"Error: Chat ID {chat_id} not found. Please ensure the bot is in the group and the ID is correct.")
             return False
         print(f"Error checking user membership: {e}")
         return False
 
+# NEW: Hàm kiểm tra xem người dùng có quyền admin hoặc CTV không
+def is_admin_or_ctv(user_id):
+    return user_id in ADMIN_IDS or user_id in CTV_IDS
+
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
     referrer_id = None
-    # Kiểm tra xem có tham số referral trong lệnh start không
     if len(message.text.split()) > 1:
         try:
             referrer_id = int(message.text.split()[1])
-            # Đảm bảo người giới thiệu không phải là chính họ
             if referrer_id == user_id:
                 referrer_id = None
         except ValueError:
             referrer_id = None
 
-    response_text = ("👋 Chào mừng đến với BOT TÀI XỈU VIP!\n"
-                     "Để sử dụng bot miễn phí trong 7 ngày, vui lòng tham gia nhóm sau:\n"
+    response_text = ("👋 Chào mừng đến với BOT TÀI XỈU VIP!\n\n"
+                     "Để nhận **30 xu** miễn phí và sử dụng bot, "
+                     "vui lòng tham gia nhóm sau và nhấn nút 'Xác nhận đã tham gia nhóm':\n"
                      f"{SUPPORT_GROUP_LINK}\n\n"
-                     "Sau khi tham gia nhóm, bot sẽ tự động kiểm tra và cấp quyền cho bạn. "
-                     "Nếu bot không cấp quyền tự động, vui lòng liên hệ admin.\n\n"
                      "Các lệnh bạn có thể sử dụng:\n"
-                     "🔹 /tx <mã MD5> → Dự đoán kết quả (mỗi lần trừ 1 lượt).\n"
-                     "🔹 /nap <số tiền> → Mua lượt dùng.\n"
+                     "🔹 /tx <mã MD5> → Dự đoán kết quả (trừ {COIN_PER_MD5_ANALYZE} xu).\n"
+                     "🔹 /nap <số tiền> → Mua xu dùng.\n"
                      "🔹 /dabank <số tiền> <nội dung> → Gửi thông tin giao dịch ngân hàng để admin duyệt.\n"
-                     "🔹 /history → Xem lịch sử & lãi/lỗ.\n"
+                     "🔹 /history → Xem lịch sử & số xu.\n"
                      "🔹 /support → Liên hệ hỗ trợ.\n"
-                     "🔹 /moiban → Tạo link giới thiệu để nhận thêm lượt.")
+                     "🔹 /moiban → Tạo link giới thiệu để nhận thêm xu.")
 
-    bot.reply_to(message, response_text)
+    markup = types.InlineKeyboardMarkup()
+    btn_confirm = types.InlineKeyboardButton("✅ Xác nhận đã tham gia nhóm", callback_data='confirm_group_join')
+    markup.add(btn_confirm)
 
-    # Kiểm tra và cấp free trial nếu chưa có hoặc đã hết hạn
-    if user_id not in user_free_trial_end_time or user_free_trial_end_time[user_id] < time.time():
-        if is_user_member(SUPPORT_GROUP_ID, user_id):
-            user_free_trial_end_time[user_id] = time.time() + (7 * 24 * 60 * 60) # 7 ngày
-            user_turns[user_id] = user_turns.get(user_id, 0) + 7 # Cấp 7 lượt
-            save_data()
-            bot.send_message(user_id, "🎉 Chúc mừng! Bạn đã nhận được 7 ngày dùng thử miễn phí (7 lượt)! "
-                                      "Hãy dùng lệnh /tx để bắt đầu dự đoán.")
-            print(f"User {user_id} granted 7-day free trial.")
-        else:
-            bot.send_message(user_id, "⚠️ Để nhận 7 ngày dùng thử miễn phí, bạn cần tham gia nhóm hỗ trợ!")
+    bot.reply_to(message, response_text, reply_markup=markup)
 
-    # Xử lý người giới thiệu
+    user_pending_confirmation[user_id] = True
+    save_data()
+
     if referrer_id and referrer_id != user_id:
-        if str(user_id) not in referral_links: # Chỉ cộng lượt cho người giới thiệu nếu đây là lượt giới thiệu mới
-            user_turns[referrer_id] = user_turns.get(referrer_id, 0) + 1
-            referral_links[str(user_id)] = referrer_id # Lưu lại để tránh cộng nhiều lần
+        if str(user_id) not in referral_links or referral_links.get(str(user_id)) != referrer_id:
+            user_coins[referrer_id] = user_coins.get(referrer_id, 0) + REFERRAL_BONUS_COINS
+            referral_links[str(user_id)] = referrer_id
             save_data()
-            bot.send_message(referrer_id, f"🎉 Bạn vừa giới thiệu thành công một người dùng mới và được cộng thêm 1 lượt dùng!")
-            print(f"User {referrer_id} gained 1 turn from referral by {user_id}.")
+            bot.send_message(referrer_id,
+                             f"🎉 Bạn vừa giới thiệu thành công một người dùng mới "
+                             f"và được cộng thêm {REFERRAL_BONUS_COINS} xu!\n"
+                             f"Tổng xu hiện tại: {user_coins.get(referrer_id, 0)}")
+            print(f"User {referrer_id} gained {REFERRAL_BONUS_COINS} coins from referral by {user_id}.")
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'confirm_group_join')
+def handle_confirm_group_join(call):
+    user_id = call.from_user.id
+    if not user_pending_confirmation.get(user_id, False):
+        bot.answer_callback_query(call.id, "Bạn đã xác nhận hoặc không có yêu cầu chờ xử lý.")
+        return
+
+    if is_user_member(SUPPORT_GROUP_ID, user_id):
+        user_coins[user_id] = user_coins.get(user_id, 0) + GROUP_JOIN_BONUS_COINS
+        if user_id in user_pending_confirmation:
+            del user_pending_confirmation[user_id]
+        save_data()
+
+        bot.send_message(user_id,
+                         f"✅ Chúc mừng! Bạn đã xác nhận thành công và được cộng {GROUP_JOIN_BONUS_COINS} xu!\n"
+                         f"Tổng xu hiện tại của bạn: {user_coins.get(user_id, 0)}\n"
+                         f"Bây giờ bạn có thể dùng lệnh /tx để dự đoán.")
+        bot.answer_callback_query(call.id, f"Bạn đã nhận {GROUP_JOIN_BONUS_COINS} xu!")
+        bot.edit_message_reply_markup(chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
+        print(f"User {user_id} confirmed group join and received {GROUP_JOIN_BONUS_COINS} coins.")
+    else:
+        bot.answer_callback_query(call.id, "❌ Bạn chưa tham gia nhóm. Vui lòng tham gia nhóm trước khi xác nhận.")
+        bot.send_message(user_id, f"⚠️ Vui lòng tham gia nhóm này trước khi nhấn nút xác nhận: {SUPPORT_GROUP_LINK}")
 
 
 @bot.message_handler(commands=['tx'])
@@ -161,47 +196,20 @@ def get_tx_signal(message):
         bot.reply_to(message, "❌ Vui lòng nhập mã MD5 hợp lệ!\n🔹 Ví dụ: /tx d41d8cd98f00b204e9800998ecf8427e")
         return
 
-    # Kiểm tra xem user có free trial đang hoạt động không
-    is_free_trial_active = user_id in user_free_trial_end_time and user_free_trial_end_time[user_id] > time.time()
-    turns = user_turns.get(user_id, 0)
+    coins = user_coins.get(user_id, 0)
 
-    if not is_free_trial_active and turns <= 0:
-        bot.reply_to(message, "⚠️ Bạn đã hết lượt dùng! Vui lòng dùng lệnh /nap <số tiền> để mua thêm "
-                              "hoặc tham gia nhóm hỗ trợ để nhận 7 ngày miễn phí: "
-                              f"{SUPPORT_GROUP_LINK}")
+    if coins < COIN_PER_MD5_ANALYZE:
+        bot.reply_to(message, f"⚠️ Bạn không đủ xu! Vui lòng dùng lệnh /nap <số tiền> để mua thêm "
+                              f"hoặc tham gia nhóm hỗ trợ để nhận {GROUP_JOIN_BONUS_COINS} xu: "
+                              f"{SUPPORT_GROUP_LINK} và nhấn nút xác nhận.")
         return
 
-    if is_free_trial_active:
-        # Trong thời gian free trial, không trừ lượt từ user_turns
-        # Giả định mỗi lượt MD5 tương ứng với 1 ngày trong free trial hoặc bạn muốn free trial là không giới hạn lượt trong 7 ngày
-        # Ở đây tôi sẽ dùng model là mỗi lượt trừ 1 lượt trong free trial, nhưng không giới hạn số lượt nếu người dùng có lượt mua
-        # Hoặc bạn có thể đơn giản là cho phép dùng không giới hạn trong 7 ngày nếu user có free trial
-
-        # Cách 1: Free trial cho phép dùng không giới hạn lượt trong 7 ngày
-        pass # Không trừ lượt
-
-        # Cách 2: Free trial cấp số lượt nhất định (ví dụ 7 lượt)
-        # Nếu bạn muốn free trial chỉ cấp 7 lượt, thì phải có một biến đếm riêng cho free trial
-        # Để đơn giản, tôi sẽ cho phép dùng miễn phí nếu free trial đang hoạt động.
-        # Nếu muốn giới hạn số lượt trong free trial, bạn cần thêm logic phức tạp hơn.
-    else:
-        # Nếu không có free trial hoặc đã hết hạn, trừ lượt từ user_turns
-        user_turns[user_id] = turns - 1
-        save_data()
-
+    user_coins[user_id] = coins - COIN_PER_MD5_ANALYZE
+    save_data()
     md5_hash = parts[1]
     result_analysis = analyze_md5(md5_hash)
 
-    remaining_info = ""
-    if is_free_trial_active:
-        remaining_time = int(user_free_trial_end_time[user_id] - time.time())
-        days = remaining_time // (24 * 60 * 60)
-        hours = (remaining_time % (24 * 60 * 60)) // (60 * 60)
-        remaining_info = f"⏳ Thời gian dùng thử miễn phí còn lại: {days} ngày {hours} giờ"
-    else:
-        remaining_info = f"🎫 Lượt còn lại: {user_turns[user_id]}"
-
-    bot.reply_to(message, result_analysis + f"\n\n{remaining_info}")
+    bot.reply_to(message, result_analysis + f"\n\n💰 Xu còn lại: {user_coins[user_id]}")
 
 
 @bot.message_handler(commands=['result'])
@@ -212,7 +220,7 @@ def set_actual_result(message):
         return
 
     parts = message.text.split()
-    if len(parts) < 2 or parts[1].lower() not in ["tài", "xỉu", "gãy"]: # Thêm "gãy"
+    if len(parts) < 2 or parts[1].lower() not in ["tài", "xỉu", "gãy"]:
         bot.reply_to(message, "❌ Nhập kết quả hợp lệ! (tài/xỉu/gãy)")
         return
 
@@ -224,25 +232,16 @@ def set_actual_result(message):
     last_prediction = history[-1]
     last_prediction["kết quả thực tế"] = actual_result
 
-    # Sử dụng thông tin từ ngày 2025-06-03: Cứ 2 lần MD5 'Gãy' thì có 1 lần khác
-    # Đây là logic phức tạp, tôi sẽ giả định 'Gãy' là một trường hợp thua đặc biệt
-    # và sẽ không ảnh hưởng trực tiếp đến việc tính profit theo cách thông thường.
-    # Nếu 'Gãy' là kết quả thực tế, và dự đoán không phải 'Gãy', thì vẫn là thua.
-    # Nếu 'Gãy' được coi là một trạng thái đặc biệt không liên quan đến Tài/Xỉu,
-    # thì bạn cần định nghĩa rõ hơn cách nó ảnh hưởng đến profit.
-    # Hiện tại, tôi sẽ xử lý 'Gãy' như một kết quả thua bình thường.
-
     status_message = ""
     if last_prediction["dự đoán"] == actual_result:
         profit += 1
         status_message = "✅ Thắng kèo! 📈 (+1 điểm)"
     elif actual_result.lower() == "gãy":
-        profit -= 1 # Coi như thua khi Gãy
+        profit -= 1
         status_message = "❌ Gãy kèo! 📉 (-1 điểm)"
     else:
         profit -= 1
         status_message = "❌ Thua kèo! 📉 (-1 điểm)"
-
 
     save_data()
     bot.reply_to(message, f"📢 Cập nhật kết quả: {actual_result}\n{status_message}\n💰 Tổng lãi/lỗ: {profit} điểm")
@@ -254,21 +253,14 @@ def show_history(message):
         return
 
     history_text = "📜 LỊCH SỬ DỰ ĐOÁN & KẾT QUẢ:\n"
-    # Lấy 5 mục cuối cùng hoặc ít hơn nếu lịch sử không đủ
     for idx, entry in enumerate(history[-5:], start=max(0, len(history) - 5) + 1):
         history_text += f"🔹 Lần {idx}:\n"
         history_text += f"   - 📊 Dự đoán: {entry['dự đoán']}\n"
         history_text += f"   - 🎯 Kết quả thực tế: {entry['kết quả thực tế'] or '❓ Chưa có'}\n"
 
     user_id = message.from_user.id
-    turns = user_turns.get(user_id, 0)
-    history_text += f"\n💰 Tổng lãi/lỗ: {profit} điểm\n🎫 Lượt còn lại: {turns}"
-
-    if user_id in user_free_trial_end_time and user_free_trial_end_time[user_id] > time.time():
-        remaining_time = int(user_free_trial_end_time[user_id] - time.time())
-        days = remaining_time // (24 * 60 * 60)
-        hours = (remaining_time % (24 * 60 * 60)) // (60 * 60)
-        history_text += f"\n⏳ Thời gian dùng thử miễn phí còn lại: {days} ngày {hours} giờ"
+    coins = user_coins.get(user_id, 0)
+    history_text += f"\n💰 Tổng lãi/lỗ: {profit} điểm\n💰 Xu còn lại: {coins}"
 
     bot.reply_to(message, history_text)
 
@@ -281,27 +273,27 @@ def handle_nap(message):
 
     amount = int(parts[1])
     user_id = message.from_user.id
-    # Mỗi 1000đ = 1 lượt
-    turns_to_add = amount // 1000
-    if turns_to_add < 10 or turns_to_add > 10000:
-        bot.reply_to(message, "⚠️ Bạn chỉ được mua từ 10 đến 10000 lượt (tương ứng từ 10,000đ đến 10,000,000đ).")
+    coins_to_add = (amount // 1000) * COIN_PER_MD5_ANALYZE
+    if coins_to_add < (10 * COIN_PER_MD5_ANALYZE) or coins_to_add > (10000 * COIN_PER_MD5_ANALYZE):
+        bot.reply_to(message, f"⚠️ Bạn chỉ được mua từ {10 * COIN_PER_MD5_ANALYZE} đến {10000 * COIN_PER_MD5_ANALYZE} xu "
+                              f"(tương ứng từ 10,000đ đến 10,000,000đ).")
         return
 
     code = generate_nap_code()
-    reply = (f"💳 HƯỚNG DẪN NẠP TIỀN MUA LƯỢT\n\n"
+    reply = (f"💳 HƯỚNG DẪN NẠP TIỀN MUA XU\n\n"
              f"➡️ Số tài khoản: 497720088\n"
              f"➡️ Ngân hàng: MB Bank\n"
              f"➡️ Số tiền: {amount} VNĐ\n"
              f"➡️ Nội dung chuyển khoản: NAP{code}\n\n"
-             f"⏳ Sau khi chuyển khoản, admin sẽ duyệt và cộng {turns_to_add} lượt cho bạn.")
+             f"⏳ Sau khi chuyển khoản, admin sẽ duyệt và cộng {coins_to_add} xu cho bạn.")
 
     for admin_id in ADMIN_IDS:
         bot.send_message(admin_id, f"📥 YÊU CẦU NẠP TIỀN\n"
                                    f"👤 User ID: {user_id}\n"
                                    f"💰 Số tiền: {amount} VNĐ\n"
-                                   f"🎫 Lượt mua: {turns_to_add}\n"
+                                   f"💰 Xu mua: {coins_to_add}\n"
                                    f"📝 Nội dung: NAP{code}\n\n"
-                                   f"Duyệt bằng lệnh: /approve {user_id} {turns_to_add}")
+                                   f"Duyệt bằng lệnh: /approve {user_id} {coins_to_add}")
 
     bot.reply_to(message, reply)
 
@@ -312,16 +304,16 @@ def approve_nap(message):
 
     parts = message.text.split()
     if len(parts) < 3 or not parts[1].isdigit() or not parts[2].isdigit():
-        bot.reply_to(message, "❌ Sai cú pháp. Dùng /approve <user_id> <số lượt>")
+        bot.reply_to(message, "❌ Sai cú pháp. Dùng /approve <user_id> <số xu>")
         return
 
     uid = int(parts[1])
-    turns = int(parts[2])
-    user_turns[uid] = user_turns.get(uid, 0) + turns
+    coins = int(parts[2])
+    user_coins[uid] = user_coins.get(uid, 0) + coins
 
     save_data()
-    bot.send_message(uid, f"✅ Bạn đã được cộng {turns} lượt dùng!\n🎯 Dùng lệnh /tx <md5> để dự đoán.")
-    bot.reply_to(message, f"Đã cộng {turns} lượt cho user {uid}.")
+    bot.send_message(uid, f"✅ Bạn đã được cộng {coins} xu dùng!\n🎯 Dùng lệnh /tx <md5> để dự đoán.")
+    bot.reply_to(message, f"Đã cộng {coins} xu cho user {uid}.")
 
 @bot.message_handler(commands=['dabank'])
 def handle_dabank(message):
@@ -339,10 +331,10 @@ def handle_dabank(message):
                                    f"👤 User ID: {user_id}\n"
                                    f"💰 Số tiền: {amount} VNĐ\n"
                                    f"📝 Nội dung: {content}\n\n"
-                                   f"Duyệt bằng lệnh: /approve {user_id} <số lượt>")
+                                   f"Duyệt bằng lệnh: /approve {user_id} <số xu>")
 
     bot.reply_to(message, f"⏳ Đang chờ admin duyệt giao dịch.\n"
-                          f"Sau khi admin duyệt, bạn sẽ nhận được lượt dùng.\n"
+                          f"Sau khi admin duyệt, bạn sẽ nhận được xu dùng.\n"
                           f"💰 Số tiền: {amount} VNĐ\n"
                           f"📝 Nội dung: {content}")
 
@@ -353,8 +345,79 @@ def handle_support(message):
 @bot.message_handler(commands=['moiban'])
 def handle_moiban(message):
     user_id = message.from_user.id
-    referral_link = f"https://t.me/your_bot_username?start={user_id}" # Thay 'your_bot_username' bằng username của bot bạn
+    referral_link = f"https://t.me/your_bot_username?start={user_id}" # THAY 'your_bot_username' BẰNG USERNAME CỦA BOT BẠN
     bot.reply_to(message, f"🔗 Đây là link giới thiệu của bạn:\n`{referral_link}`\n\n"
-                          "Mỗi khi có người mới sử dụng link này và nhấn /start, bạn sẽ được cộng thêm 1 lượt dùng!")
+                          f"Mỗi khi có người mới sử dụng link này và nhấn /start, "
+                          f"bạn sẽ được cộng thêm {REFERRAL_BONUS_COINS} xu!")
+
+
+# NEW: Lệnh /addxu (cho Admin và CTV)
+@bot.message_handler(commands=['addxu'])
+def add_coins(message):
+    user_id_requester = message.from_user.id
+    if not is_admin_or_ctv(user_id_requester):
+        bot.reply_to(message, "⛔ Bạn không có quyền sử dụng lệnh này!")
+        return
+
+    parts = message.text.split()
+    if len(parts) < 3 or not parts[1].isdigit() or not parts[2].isdigit():
+        bot.reply_to(message, "❌ Sai cú pháp. Dùng /addxu <user_id> <số_xu>")
+        return
+
+    target_user_id = int(parts[1])
+    amount = int(parts[2])
+
+    if amount <= 0:
+        bot.reply_to(message, "❌ Số xu cần cộng phải lớn hơn 0.")
+        return
+
+    user_coins[target_user_id] = user_coins.get(target_user_id, 0) + amount
+    save_data()
+
+    bot.reply_to(message, f"✅ Đã cộng {amount} xu cho người dùng {target_user_id}.")
+    try:
+        bot.send_message(target_user_id,
+                         f"🎉 Bạn đã được cộng thêm {amount} xu bởi Admin/CTV!\n"
+                         f"Tổng xu hiện tại: {user_coins.get(target_user_id, 0)}")
+    except Exception as e:
+        print(f"Không thể gửi tin nhắn cho user {target_user_id}: {e}")
+        bot.reply_to(message, f"⚠️ Đã cộng xu nhưng không thể gửi thông báo cho người dùng {target_user_id} (có thể họ đã chặn bot).")
+
+
+# NEW: Lệnh /ctv (chỉ dành cho Admin)
+@bot.message_handler(commands=['ctv'])
+def grant_ctv_role(message):
+    user_id_requester = message.from_user.id
+    if user_id_requester not in ADMIN_IDS:
+        bot.reply_to(message, "⛔ Bạn không có quyền sử dụng lệnh này! Lệnh này chỉ dành cho Admin.")
+        return
+
+    parts = message.text.split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        bot.reply_to(message, "❌ Sai cú pháp. Dùng /ctv <user_id>")
+        return
+
+    target_user_id = int(parts[1])
+
+    if target_user_id in ADMIN_IDS:
+        bot.reply_to(message, f"Người dùng {target_user_id} đã là Admin rồi.")
+        return
+
+    if target_user_id in CTV_IDS:
+        bot.reply_to(message, f"Người dùng {target_user_id} đã là CTV rồi.")
+        return
+
+    CTV_IDS.append(target_user_id)
+    save_data()
+
+    bot.reply_to(message, f"✅ Đã cấp quyền CTV cho người dùng {target_user_id}.")
+    try:
+        bot.send_message(target_user_id,
+                         f"🎉 Chúc mừng! Bạn đã được cấp quyền Cộng tác viên (CTV)!\n"
+                         f"Bây giờ bạn có thể sử dụng lệnh /addxu <user_id> <số_xu> để cộng xu cho người dùng khác.")
+    except Exception as e:
+        print(f"Không thể gửi tin nhắn cho user {target_user_id}: {e}")
+        bot.reply_to(message, f"⚠️ Đã cấp quyền CTV nhưng không thể gửi thông báo cho người dùng {target_user_id}.")
+
 
 bot.polling()
