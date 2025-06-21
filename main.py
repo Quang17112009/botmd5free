@@ -11,7 +11,7 @@ keep_alive()
 BOT_TOKEN = "7581761997:AAFPeyJDvTYQoVob-P3MDuXpaEByrEtbVT8"  # Đảm bảo đây là token chính xác
 ADMIN_IDS = [6915752059]
 SUPPORT_GROUP_LINK = "https://t.me/+cd71g9Cwx9Y1ZTM1"
-SUPPORT_GROUP_ID = -1002781947864 # Thay thế bằng ID nhóm thực tế của bạn
+SUPPORT_GROUP_ID = -1002781947864
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
