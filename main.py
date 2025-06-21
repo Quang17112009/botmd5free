@@ -7,7 +7,7 @@ from keep_alive import keep_alive
 
 keep_alive()
 
-BOT_TOKEN = "8036512196:AAHP1_b3plJQEhCcZCTvIyzAXwHHmj35sKE"  # Đảm bảo đây là token chính xác
+BOT_TOKEN = "7581761997:AAFPeyJDvTYQoVob-P3MDuXpaEByrEtbVT8"  # Đảm bảo đây là token chính xác
 ADMIN_IDS = [6915752059]
 SUPPORT_GROUP_LINK = "https://t.me/+cd71g9Cwx9Y1ZTM1" # Link nhóm hỗ trợ
 # ID của nhóm bạn muốn người dùng tham gia để nhận free trial
