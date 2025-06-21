@@ -7,12 +7,12 @@ from keep_alive import keep_alive
 
 keep_alive()
 
-BOT_TOKEN = "8070556149:AAEWspw2Kkl5EYCDO_FVQPisG5YcDgTpbk1A"  # Đảm bảo đây là token chính xác
+BOT_TOKEN = "8036512196:AAHP1_b3plJQEhCcZCTvIyzAXwHHmj35sKE"  # Đảm bảo đây là token chính xác
 ADMIN_IDS = [6915752059]
 SUPPORT_GROUP_LINK = "https://t.me/+cd71g9Cwx9Y1ZTM1" # Link nhóm hỗ trợ
 # ID của nhóm bạn muốn người dùng tham gia để nhận free trial
 # Bạn cần lấy ID này bằng cách thêm bot vào nhóm và dùng một bot khác để lấy chat ID, hoặc in message.chat.id từ bot của bạn
-SUPPORT_GROUP_ID = -1002244243685 # Thay thế bằng ID nhóm thực tế của bạn
+SUPPORT_GROUP_ID = -1002781947864 # Thay thế bằng ID nhóm thực tế của bạn
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
