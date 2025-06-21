@@ -8,7 +8,7 @@ from keep_alive import keep_alive
 
 keep_alive()
 
-BOT_TOKEN = "7581761997:AAFPeyJDvTYQoVob-P3MDuXpaEByrEtbVT8"  # Đảm bảo đây là token chính xác
+BOT_TOKEN = "7516381015:AAGrd9jTFkiNzMNU0_FjtztOudYzJBGWpuM"  # Đảm bảo đây là token chính xác
 ADMIN_IDS = [6915752059]
 SUPPORT_GROUP_LINK = "https://t.me/+cd71g9Cwx9Y1ZTM1"
 SUPPORT_GROUP_ID = -1002781947864
