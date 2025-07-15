@@ -1,2 +1,6 @@
+telebot
+python-telegram-bot
 pyTelegramBotAPI
+pytz
+aiogram==2.25.2
 Flask
