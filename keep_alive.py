@@ -5,10 +5,10 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Hello! I'm alive!"
+    return "Bot is alive!"
 
 def run():
-    app.run(host='0.0.0.0', port=8080) # Hoặc port 10000 hoặc port mà Render yêu cầu
+    app.run(host='0.0.0.0', port=8080)
 
 def keep_alive():
     t = Thread(target=run)
