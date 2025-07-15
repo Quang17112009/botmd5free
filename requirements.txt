@@ -2,5 +2,5 @@ telebot
 python-telegram-bot
 pyTelegramBotAPI
 pytz
-aiogram
+aiogram==2.25.1
 Flask
